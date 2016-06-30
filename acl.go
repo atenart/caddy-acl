@@ -32,7 +32,15 @@ func parsePrefix(c *caddy.Controller) (*net.IPNet, error) {
 
 	_, ret, err := net.ParseCIDR(c.Val())
 	if err != nil {
-		return nil, err
+		ip := net.ParseIP(c.Val())
+		if ip == nil {
+			return nil, errors.New("acl: invalid subnet or address")
+		}
+
+		ret = &net.IPNet{
+			IP: ip,
+			Mask: net.CIDRMask(32, 32),
+		}
 	}
 
 	return ret, nil

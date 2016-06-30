@@ -23,6 +23,7 @@ type ACLBlockConfig struct {
 	Allow	[]*net.IPNet
 	Deny	[]*net.IPNet
 	Status	int
+	Header	string
 }
 
 func parsePrefix(c *caddy.Controller) (*net.IPNet, error) {
@@ -88,6 +89,12 @@ func parseConfigurationBlock(c *caddy.Controller) (ACLBlockConfig, error) {
 			}
 
 			cfg.Status = status
+		case "header":
+			if !c.NextArg() {
+				return cfg, c.ArgErr()
+			}
+
+			cfg.Header = c.Val()
 		}
 	}
 
@@ -119,13 +126,18 @@ func isBehindACL(urlPath string, cfg ACLBlockConfig) bool {
 	return false
 }
 
-func clientIP(r *http.Request) (net.IP, error) {
-	var ip string
+func clientIP(r *http.Request, cfg ACLBlockConfig) (net.IP, error) {
+	var ip, tmp string
 	var err error
 
-	// TODO: handle user defined headers
+	if cfg.Header != "" {
+		tmp = r.Header.Get(cfg.Header)
+		if tmp != "" {
+			goto found
+		}
+	}
 
-	if tmp := r.Header.Get("X-Forwarded-For"); tmp != "" {
+	if tmp = r.Header.Get("X-Forwarded-For"); tmp != "" {
 		ip = tmp
 	} else {
 		ip, _, err = net.SplitHostPort(r.RemoteAddr)
@@ -134,6 +146,7 @@ func clientIP(r *http.Request) (net.IP, error) {
 		}
 	}
 
+found:
 	ret := net.ParseIP(ip)
 	if ret == nil {
 		return nil, errors.New("acl: unable to parse address")
@@ -166,7 +179,7 @@ func (self ACL) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 			continue
 		}
 
-		client, err := clientIP(r)
+		client, err := clientIP(r, cfg)
 		if err != nil {
 			return http.StatusInternalServerError, err
 		}

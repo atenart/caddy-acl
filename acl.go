@@ -3,6 +3,7 @@
 package acl
 
 import (
+	"errors"
 	"net"
 	"net/http"
 	"strconv"
@@ -100,7 +101,72 @@ func parseConfiguration(c *caddy.Controller) ([]ACLBlockConfig, error) {
 	return config, nil
 }
 
+func isBehindACL(urlPath string, cfg ACLBlockConfig) bool {
+	for _, path := range cfg.Paths {
+		if httpserver.Path(urlPath).Matches(path) {
+			return true
+		}
+	}
+	return false
+}
+
+func clientIP(r *http.Request) (net.IP, error) {
+	var ip string
+	var err error
+
+	// TODO: handle user defined headers
+
+	if tmp := r.Header.Get("X-Forwarded-For"); tmp != "" {
+		ip = tmp
+	} else {
+		ip, _, err = net.SplitHostPort(r.RemoteAddr)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	ret := net.ParseIP(ip)
+	if ret == nil {
+		return nil, errors.New("acl: unable to parse address")
+	}
+
+	return ret, nil
+}
+
+func isInSubnets(client net.IP, subs []*net.IPNet) bool {
+	for _, subnet := range subs {
+		if subnet.Contains(client) {
+			return true
+		}
+	}
+	return false
+}
+
+func deny(w *http.ResponseWriter) (int, error) {
+	return http.StatusForbidden, nil
+}
+
 func (self ACL) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
+	for _, cfg := range self.Config {
+		// check if the URL path is behind this acl{} block
+		if !isBehindACL(r.URL.Path, cfg) {
+			continue
+		}
+
+		client, err := clientIP(r)
+		if err != nil {
+			return http.StatusInternalServerError, err
+		}
+
+		if isInSubnets(client, cfg.Deny) {
+			return deny(&w)
+		}
+
+		if !isInSubnets(client, cfg.Allow) && len(cfg.Allow) > 0 {
+			return deny(&w)
+		}
+	}
+
 	return self.Next.ServeHTTP(w, r)
 }
 

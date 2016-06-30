@@ -40,6 +40,7 @@ func parsePrefix(c *caddy.Controller) (*net.IPNet, error) {
 
 func parseConfigurationBlock(c *caddy.Controller) (ACLBlockConfig, error) {
 	var cfg ACLBlockConfig
+	cfg.Status = -1
 
 	// get acl{} block first arguments (base paths)
 	// TODO: sort the paths: most specific first
@@ -142,7 +143,11 @@ func isInSubnets(client net.IP, subs []*net.IPNet) bool {
 	return false
 }
 
-func deny(w *http.ResponseWriter) (int, error) {
+func deny(w *http.ResponseWriter, cfg ACLBlockConfig) (int, error) {
+	if cfg.Status != -1 {
+		return cfg.Status, nil
+	}
+
 	return http.StatusForbidden, nil
 }
 
@@ -159,11 +164,11 @@ func (self ACL) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, error) {
 		}
 
 		if isInSubnets(client, cfg.Deny) {
-			return deny(&w)
+			return deny(&w, cfg)
 		}
 
 		if !isInSubnets(client, cfg.Allow) && len(cfg.Allow) > 0 {
-			return deny(&w)
+			return deny(&w, cfg)
 		}
 	}
 

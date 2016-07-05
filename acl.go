@@ -127,26 +127,20 @@ func isBehindACL(urlPath string, cfg ACLBlockConfig) bool {
 }
 
 func clientIP(r *http.Request, cfg ACLBlockConfig) (net.IP, error) {
-	var ip, tmp string
+	var ip string
 	var err error
 
 	if cfg.Header != "" {
-		tmp = r.Header.Get(cfg.Header)
-		if tmp != "" {
-			goto found
-		}
+		ip = r.Header.Get(cfg.Header)
 	}
 
-	if tmp = r.Header.Get("X-Forwarded-For"); tmp != "" {
-		ip = tmp
-	} else {
+	if ip == "" {
 		ip, _, err = net.SplitHostPort(r.RemoteAddr)
 		if err != nil {
 			return nil, err
 		}
 	}
 
-found:
 	ret := net.ParseIP(ip)
 	if ret == nil {
 		return nil, errors.New("acl: unable to parse address")
